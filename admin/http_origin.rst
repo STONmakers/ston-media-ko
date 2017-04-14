@@ -1,16 +1,22 @@
-﻿.. _origin:
+﻿.. _http-origin:
 
-7장. 원본서버
+6장. HTTP 원본서버
 ******************
 
-이 장에서는 STON과 원본서버의 관계에 대해 설명한다.
-원본서버란 일반적으로 HTTP 규격을 준수하는 웹서버를 의미한다.
-관리자라면 원본을 보호하기 위해 이번 장의 모든 내용을 숙지할 필요가 있다.
-이를 바탕으로 원본장애에도 내구성을 갖춘 유연한 서비스를 구축할 수 있다.
+이 장에서는 STON 미디어 서버와 HTTP 원본서버 구간의 통신에 대해 알아본다.
+HTTP 원본서버에 대해 Apache 웹서버만 생각하기 쉽지만 AWS S3같은 HTTP로 통신할 수 있는 서버 모두를 포함한다. ::
 
-원본서버는 보호되어야 한다.
-장애의 종류가 다양한만큼 대처방안도 다양하다.
-원본보호 정책을 적절히 구성하면 여유로운 점검시간을 가질 수 있다.
+   # server.xml - <Server><VHostDefault>
+   # vhosts.xml - <Vhosts><Vhost>
+
+   <OriginOptions>
+       <Http>
+           ... (세부설정) ...
+       </Http>
+   </OriginOptions>
+
+이 장에서 다루는 모든 설정은 ``<Http>`` 하위 태그로 구성된다.
+
 
 
 .. toctree::
@@ -18,7 +24,49 @@
 
 
 
-.. _origin_exclusion_and_recovery:
+.. _http-origin-addr-policy:
+
+원본주소 사용정책
+====================================
+
+원본주소(IP)는 다음 요소들에 의해 어떻게 사용될지 결정된다.
+
+-  :ref:`env-vhost-activeorigin` 주소 형식(IP 또는 Domain)과 보조주소
+-  `장애감지와 복구`_
+-  `Health-Checker`_
+
+서비스를 운영하다보면 원본주소가 배제/복구되는 일은 빈번하다.
+STON은 IP테이블을 기반으로 원본주소를 사용하며 `원본상태 모니터링`__ API를 통해 정보를 제공한다.
+
+원본주소를 IP로 설정한 경우 매우 간단하다.
+
+-  설정변경 이외에 IP목록을 변화시키는 요인은 없다.
+-  TTL에 의해 IP주소가 만료되지 않는다.
+-  장애/복구 모두 설정(IP주소)에 기반하여 동작한다.
+
+원본주소를 Domain으로 설정하면 Resolving해서 IP를 얻어야 한다.
+( :ref:`admin-log-dns` 에 기록된다.)
+IP 목록은 동적으로 변경될 수 있으며 모든 IP는 TTL(Time To Live)동안만 유효하다.
+
+-  Domain은 주기적으로(1~10초) Resolving한다.
+-  Resolving결과를 통해 사용할 IP테이블을 구성한다.
+-  모든 IP는 TTL만큼만 유효하며 TTL이 만료되면 사용하지 않는다.
+-  같은 IP가 다시 Resolving되면 TTL을 갱신한다.
+-  IP테이블은 비어서는 안된다. (TTL이 만료되었더라도) 마지막 IP들은 삭제되지 않는다.
+
+원본주소를 Domain으로 설정하여도 장애/복구는 IP기반으로 동작한다.
+Domain주소 장애/복구 정책은 다음과 같다.
+
+-  (Domain에 대해) 알고 있는 모든 IP주소가 배제(Inactive)되면 해당 Domain주소가 배제된다.
+-  신규 IP가 Resolving되더라도 Domain이 배제되어 있다면 IP주소는 처음부터 배제된다.
+-  모든 IP가 TTL 만료되더라도 배제된 Domain상태는 풀리지 않는다.
+-  배제된 Domain에 속한 IP주소가 하나라도 복구되어야 해당 Domain은 다시 활성화된다.
+
+다소 복잡한 내용이므로 `원본상태 모니터링`_ API를 통해 서비스 동작상태에 대해 이해도를 높이는 것이 좋다.
+
+
+
+.. _http-origin-exclusion-recovery:
 
 장애감지와 복구
 ====================================
@@ -26,8 +74,8 @@
 Caching과정 중 원본서버에 장애가 발생하면 자동배제한다.
 다시 안정화됐다고 판단하면 서비스에 투입한다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <ConnectTimeout>3</ConnectTimeout>
    <ReceiveTimeout>10</ReceiveTimeout>
@@ -62,106 +110,19 @@ Caching과정 중 원본서버에 장애가 발생하면 자동배제한다.
       콤마(,)를 사용하여 유효한 응답코드를 멀티로 설정한다.
       200, 206, 404로 설정하면 응답코드가 이 중 하나인 경우 정상응답으로 처리한다.
 
-   -  ``Log (기본: ON)`` 복구를 위해 사용된 HTTP Transaction을 :ref:`admin-log-origin` 에 기록한다.
+   -  ``Log (기본: ON)`` 복구를 위해 사용된 HTTP 트랜잭션을 :ref:`admin-log-origin` 에 기록한다.
 
 
 
-.. _origin-health-checker:
-
-Health-Checker
-====================================
-
-`장애감지와 복구`_ 는 Caching 과정 중 발생하는 장애에 대응한다.
-``<Recovery>`` 는 응답코드를 받는 즉시 HTTP Transaction을 종료한다.
-하지만 Health-Checker는 HTTP Transaction이 성공함을 확인한다. ::
-
-   # vhosts.xml - <Vhosts><Vhost>
-
-   <Origin>
-      <Address> ... </Address>
-      <HealthChecker ResCode="0" Timeout="10" Cycle="10"
-                     Exclusion="3" Recovery="5" Log="ON">/</HealthChecker>
-      <HealthChecker ResCode="200, 404" Timeout="3" Cycle="5"
-                     Exclusion="5" Recovery="20" Log="ON">/alive.html</HealthChecker>
-   </Origin>
-
--  ``<HealthChecker> (기본: /)``
-
-   Health-Checker를 구성한다. 멀티로 구성이 가능하다.
-   값으로 Uri를 지정하며, XML예외 문자의 경우 CDATA를 사용한다.
-
-   -  ``ResCode (기본: 0)`` 올바른 응답코드 (콤마로 멀티 구성가능)
-
-   -  ``Timeout (기본: 10초)`` 소켓연결부터 HTTP Transaction이 완료될 때까지 유효시간
-
-   -  ``Cycle (기본: 10초)`` 실행주기
-
-   -  ``Exclusion (기본: 3회)`` 연속 n회 실패 시 해당서버 배제
-
-   -  ``Recovery (기본: 5회)`` 연속 n회 성공 시 해당서버 재투입
-
-   -  ``Log (기본: ON)`` HTTP Transaction을 :ref:`admin-log-origin` 에 기록한다.
-
-Health-Checker는 멀티로 구성할 수 있으며 클라이언트 요청과 상관없이 독립적으로 수행된다.
-`장애감지와 복구`_ 나 다른 Health-Checker와도 정보를 공유하지 않고
-자신만의 기준으로 배제와 투입을 결정한다.
-
-
-.. _origin-use-policy:
-
-원본주소 사용정책
-====================================
-
-원본주소(IP)는 다음 요소들에 의해 어떻게 사용될지 결정된다.
-
--  :ref:`env-vhost-activeorigin` 주소 형식(IP 또는 Domain)과 보조주소
--  `장애감지와 복구`_
--  `Health-Checker`_
-
-서비스를 운영하다보면 원본주소가 배제/복구되는 일은 빈번하다.
-STON은 IP테이블을 기반으로 원본주소를 사용하며 `origin-status`_ API를 통해 정보를 제공한다.
-
-원본주소를 IP로 설정한 경우 매우 간단하다.
-
--  설정변경 이외에 IP목록을 변화시키는 요인은 없다.
--  TTL에 의해 IP주소가 만료되지 않는다.
--  장애/복구 모두 설정(IP주소)에 기반하여 동작한다.
-
-원본주소를 Domain으로 설정하면 Resolving해서 IP를 얻어야 한다.
-( :ref:`admin-log-dns` 에 기록된다.)
-IP 목록은 동적으로 변경될 수 있으며 모든 IP는 TTL(Time To Live)동안만 유효하다.
-
--  Domain은 주기적으로(1~10초) Resolving한다.
--  Resolving결과를 통해 사용할 IP테이블을 구성한다.
--  모든 IP는 TTL만큼만 유효하며 TTL이 만료되면 사용하지 않는다.
--  같은 IP가 다시 Resolving되면 TTL을 갱신한다.
--  IP테이블은 비어서는 안된다. (TTL이 만료되었더라도) 마지막 IP들은 삭제되지 않는다.
-
-원본주소를 Domain으로 설정하여도 장애/복구는 IP기반으로 동작한다.
-여기서 미묘한 점이 있다.
-DNS 클라이언트(=STON)는 Domain의 모든 IP 목록을 정확히 알 수 없다.
-하지만 사용할 수 없는 IP들만으로 Domain을 구성할 경우 장애상태가 지속될 수 없다.
-
-Domain주소 장애/복구 정책은 다음과 같다.
-
--  (Domain에 대해) 알고 있는 모든 IP주소가 배제(Inactive)되면 해당 Domain주소가 배제된다.
--  신규 IP가 Resolving되더라도 Domain이 배제되어 있다면 IP주소는 처음부터 배제된다.
--  모든 IP가 TTL 만료되더라도 배제된 Domain상태는 풀리지 않는다.
--  배제된 Domain에 속한 IP주소가 하나라도 복구되어야 해당 Domain은 다시 활성화된다.
-
-다소 복잡한 내용이므로 `origin-status`_ API를 통해 서비스 동작상태에 대해 이해도를 높이는 것이 좋다.
-
-
-
-.. _origin-status:
+.. _http-origin-status-monitoring:
 
 원본상태 모니터링
 ====================================
 
 API를 통해 가상호스트의 원본상태를 모니터링한다. ::
 
-   http://127.0.0.1:10040/monitoring/origin       // 모든 가상호스트
-   http://127.0.0.1:10040/monitoring/origin?vhost=www.example.com
+   http://127.0.0.1:20040/monitoring/origin       // 모든 가상호스트
+   http://127.0.0.1:20040/monitoring/origin?vhost=www.example.com
 
 결과는 JSON형식으로 제공된다. ::
 
@@ -224,7 +185,8 @@ API를 통해 가상호스트의 원본상태를 모니터링한다. ::
 
 
 
-.. _origin-status-reset:
+
+.. _http-origin-reset:
 
 원본상태 초기화
 ====================================
@@ -232,12 +194,12 @@ API를 통해 가상호스트의 원본상태를 모니터링한다. ::
 API를 통해 가상호스트의 원본서버 배제/복구를 초기화한다.
 또한 현재 사용 중인 세션을 재사용하지 않고 새롭게 연결을 생성한다. ::
 
-   http://127.0.0.1:10040/command/resetorigin       // 모든 가상호스트
-   http://127.0.0.1:10040/command/resetorigin?vhost=www.example.com
+   http://127.0.0.1:20040/command/resetorigin       // 모든 가상호스트
+   http://127.0.0.1:20040/command/resetorigin?vhost=www.example.com
 
 
 
-.. _origin-busysessioncount:
+.. _http-origin-busysessioncount:
 
 과부하 판단
 ====================================
@@ -246,8 +208,8 @@ API를 통해 가상호스트의 원본서버 배제/복구를 초기화한다.
 하지만 이미 Caching된 콘텐츠라면 좀 더 유연하게 대처할 수 있다.
 원본서버가 과부하 상태라고 판단되면 갱신을 늦추어 원본부하를 높이지 않는다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <BusySessionCount>100</BusySessionCount>
 
@@ -257,15 +219,16 @@ API를 통해 가상호스트의 원본서버 배제/복구를 초기화한다.
    무조건 원본서버로 요청이 가도록 하려면 이 값을 아주 크게 설정하면 된다.
 
 
-.. _origin-balancemode:
+
+.. _http-origin-balancemode:
 
 원본 선택
 ====================================
 
 원본서버 주소가 멀티(2개 이상)로 구성되어 있을 때 원본서버 선택정책을 설정한다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <BalanceMode>RoundRobin</BalanceMode>
 
@@ -294,6 +257,9 @@ API를 통해 가상호스트의 원본서버 배제/복구를 초기화한다.
 =========== =================================================================== =====================================================
 
 
+
+.. _http-origin-reuse:
+
 세션 재사용
 ====================================
 
@@ -303,8 +269,8 @@ API를 통해 가상호스트의 원본서버 배제/복구를 초기화한다.
 특히 오랫동안 재사용하지 않은 세션의 경우 이러한 가능성은 더욱 높다.
 이를 방지하기 위하여 n초 동안 재사용되지 않은 세션에 대해서 자동으로 연결을 종료하도록 설정한다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <ReuseTimeout>60</ReuseTimeout>
 
@@ -313,16 +279,17 @@ API를 통해 가상호스트의 원본서버 배제/복구를 초기화한다.
    0으로 설정하면 원본서버 세션을 재사용하지 않는다.
 
 
-.. _origin_partsize:
+
+.. _http-origin-partsize:
 
 Range요청
 ====================================
 
 한번에 다운로드 받는 컨텐츠 크기를 설정한다.
-동영상처럼 앞 부분만이 주로 소비되는 컨텐츠의 경우 다운로드 크기를 제한하면 불필요한 원본 트래픽를 줄일 수 있다. ::
+동영상처럼 앞 부분만이 주로 소비되는 컨텐츠의 경우 다운로드 크기를 제한하면 불필요한 원본 트래픽을 줄일 수 있다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <PartSize>0</PartSize>
 
@@ -344,29 +311,30 @@ Range요청
 
 
 
+.. _http-origin-rangeinit:
 
 전체 Range 초기화
 ====================================
 
-일반적으로 원본서버로부터 처음 파일을 다운로드 할 때나 갱신확인 할 때는 다음과 같이 단순한 형태의 GET 요청을 보낸다. ::
+원본서버로부터 처음 파일을 다운로드 할 때나 갱신확인 할 때는 다음과 같이 단순한 형태의 GET 요청을 보낸다. ::
 
-    GET /file.dat HTTP/1.1
+    GET /trip.mp4 HTTP/1.1
 
 하지만 원본서버가 일반적인 GET요청에 대하여 항상 파일을 변조하도록 설정되어 있다면 원본파일 그대로를 Caching할 수 없어서 문제가 될 수 있다.
 
 가장 대표적인 예는 Apache 웹서버가 mod_h.264_streaming같은 외부모듈과 같이 구동되는 경우이다.
 Apache 웹서버는 GET요청에 대해서 항상 mod_h.264_streaming모듈을 통해서 응답한다.
-클라이언트(이 경우에는 STON)는 원본파일 그대로가 아닌 모듈에 의해 변조된 파일을 서비스 받는다.
+클라이언트(이 경우에는 STON 미디어 서버)는 원본파일 그대로가 아닌 모듈에 의해 변조된 파일을 서비스 받는다.
 
-   .. figure:: img/conf_origin_fullrangeinit1.png
+   .. figure:: img/sms_origin_http_fullrangeinit1.png
       :align: center
 
       mod_h.264_streaming모듈은 항상 원본을 변조한다.
 
 Range요청을 사용하면 모듈을 우회하여 원본을 다운로드할 수 있다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <FullRangeInit>OFF</FullRangeInit>
 
@@ -377,7 +345,7 @@ Range요청을 사용하면 모듈을 우회하여 원본을 다운로드할 수
    - ``ON`` 0부터 시작하는 Range요청을 보낸다.
      Apache의 경우 Range헤더가 명시되면 모듈을 우회한다. ::
 
-        GET /file.dat HTTP/1.1
+        GET /trip.mp4 HTTP/1.1
         Range: bytes=0-
 
      최초로 파일 Caching할 때는 컨텐츠의 Range를 알지 못하므로 Full-Range(=0부터 시작하는)를 요청한다.
@@ -386,9 +354,9 @@ Range요청을 사용하면 모듈을 우회하여 원본을 다운로드할 수
 콘텐츠를 갱신할 때는 다음과 같이 **If-Modified-Since** 헤더가 같이 명시된다.
 원본서버가 올바르게 **304 Not Modified** 로 응답해야 한다. ::
 
-   GET /file.dat HTTP/1.1
+   GET /trip.mp4 HTTP/1.1
    Range: bytes=0-
-   If-Modified-Since: Sat, 29 Oct 1994 19:43:31 GMT
+   If-Modified-Since: Fri, 31 Mar 2017 19:43:31 GMT
 
 .. note::
 
@@ -400,72 +368,24 @@ Range요청을 사용하면 모듈을 우회하여 원본을 다운로드할 수
    - Apache/2.2.22
 
 
-.. _origin-wholeclientrequest:
 
-클라이언트 요청 유지
+.. _http-origin-httprequest:
+
+HTTP 요청헤더
 ====================================
 
-원본에 요청할 때 클라이언트가 보낸 요청을 유지하도록 설정한다. ::
+STON 미디어 서버가 원본서버에서 다운로드를 위해 보내는 HTTP 요청헤더를 설정한다.
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
-
-   <WholeClientRequest>OFF</WholeClientRequest>
-
--  ``<WholeClientRequest>``
-
-   - ``OFF (기본)`` Caching-Key를 원본에 요청할 URL로 사용한다.
-
-   - ``ON`` 클라이언트가 요청한 URL로 원본에 요청한다.
-
-Hit Ratio를 높이기 위해 다음 설정들을 통해 Caching-Key를 결정한다.
-
-- :ref:`caching-policy-casesensitive`
-- :ref:`caching-policy-applyquerystring`
-- :ref:`caching-policy-post-method-caching`
-
-이에 따라 원본서버로 요청하는 URL과 Caching-Key가 다음과 같이 결정된다.
-
-============================================== ======================= ============================
-설정                                           클라이언트 요청 URL       원본 요청URL / Caching-Key
-============================================== ======================= ============================
-:ref:`caching-policy-casesensitive` ``OFF``    /Image/LOGO.png         /image/logo.png
-:ref:`caching-policy-casesensitive` ``ON``     /Image/LOGO.png         /Image/LOGO.png
-:ref:`caching-policy-applyquerystring` ``OFF`` /view/list.php?type=A   /view/list.php
-:ref:`caching-policy-applyquerystring` ``ON``  /view/list.php?type=A   /view/list.php?type=A
-============================================== ======================= ============================
-
-``<WholeClientRequest>`` 를 ``ON`` 으로 설정하면 다음과 같이 Caching-Key와 상관없이 클라이언트가 보낸 URL을 그대로 원본에 보낸다.
-
-============================================== =================================== ============================
-설정                                            클라이언트 / 원본 요청 URL           Caching-Key
-============================================== =================================== ============================
-:ref:`caching-policy-casesensitive` ``OFF``    /Image/LOGO.png                     /image/logo.png
-:ref:`caching-policy-casesensitive` ``ON``     /Image/LOGO.png                     /Image/LOGO.png
-:ref:`caching-policy-applyquerystring` ``OFF`` /view/list.php?type=A               /view/list.php
-:ref:`caching-policy-applyquerystring` ``ON``  /view/list.php?type=A               /view/list.php?type=A
-============================================== =================================== ============================
-
-POST 요청을 캐싱하는 경우 원본서버로 요청할 때 클라이언트가 보낸 POST요청의 Body데이터가 수정없이 전송된다.
-
-.. note::
-
-   클라이언트가 보낸 URL을 그대로 보내기 때문에 :ref:`media-trimming` 처럼 부가기능을 위해 붙여진 QueryString도 그대로 원본서버로 전달된다.
-
-
-.. _origin-httprequest:
-
-원본요청 기본 Header
-====================================
+.. _http-origin-httprequest-hostheader:
 
 Host 헤더
 ---------------------
 
-원본서버로 보내는 HTTP요청의 Host헤더를 설정한다.
+HTTP 요청의 Host헤더를 설정한다.
 별도로 설정하지 않은 경우 가상호스트 이름이 명시된다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <Host />
 
@@ -473,8 +393,8 @@ Host 헤더
    원본서버로 보낼 Host헤더를 설정한다.
    원본서버에서 80포트 이외의 포트로 서비스하고 있다면 반드시 포트 번호를 명시해야 한다. ::
 
-      # server.xml - <Server><VHostDefault><OriginOptions>
-      # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+      # server.xml - <Server><VHostDefault><OriginOptions><Http>
+      # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
       <Host>www.example2.com:8080</Host>
 
@@ -482,31 +402,35 @@ Host 헤더
 클라이언트가 보낸 Host헤더를 원본으로 보내고 싶은 경우 *로 설정한다.
 
 
+.. _http-origin-httprequest-useragentheader:
+
 User-Agent 헤더
 ---------------------
 
-원본서버로 보내는 HTTP요청의 User-Agent헤더를 설정한다. ::
+HTTP 요청의 User-Agent헤더를 설정한다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
-   <UserAgent>STON</UserAgent>
+   <UserAgent>STON Media Server</UserAgent>
 
--  ``<UserAgent> (기본: STON)``
+-  ``<UserAgent> (기본:  STON Media Server )``
    원본서버로 보낼 User-Agent헤더를 설정한다.
 
 
 클라이언트가 보낸 User-Agent헤더를 원본으로 보내고 싶은 경우 *로 설정한다.
 
 
+.. _http-origin-httprequest-xffheader:
+
 XFF(X-Forwarded-For) 헤더
 ---------------------
 
-클라이언트와 원본서버 사이에 STON이 위치하면 원본서버는 클라이언트 IP를 얻을 수 없다.
-때문에 STON은 원본서버로 보내는 모든 HTTP요청에 X-Forwarded-For헤더를 명시한다. ::
+HTTP 클라이언트와 원본서버 사이에 STON 미디어 서버가 위치하면 원본서버는 클라이언트 IP를 얻을 수 없다.
+때문에 원본서버로 보내는 모든 HTTP 요청에 X-Forwarded-For헤더를 명시한다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <XFFClientIPOnly>OFF</XFFClientIPOnly>
 
@@ -522,13 +446,16 @@ XFF(X-Forwarded-For) 헤더
         X-Forwarded-For: 220.61.7.150
 
 
+
+.. _http-origin-httprequest-etagheader:
+
 ETag 헤더 인식
 ---------------------
 
-원본서버에서 응답하는 ETag인식여부를 설정한다. ::
+원본서버에서 응답하는 ETag헤더 인식여부를 설정한다. ::
 
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <OriginalETag>OFF</OriginalETag>
 
@@ -540,48 +467,15 @@ ETag 헤더 인식
 
 
 
-.. _origin_url_rewrite:
+.. _http-origin-modifyheader:
 
-원본요청 URL변경
+헤더변경
 ====================================
 
-캐싱을 목적으로 원본으로 보내는 HTTP요청의 URL을 변경한다. ::
+원본서버로 요청을 보낼 때 조건에 따라 HTTP 헤더를 변경한다. ::
 
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
-
-   <URLRewrite>
-      <Pattern>/download/(.*)</Pattern>
-      <Replace>/#1</Replace>
-   </URLRewrite>
-   // Pattern : /download/1.3.4
-   // Replace : /1.3.4
-
-   <URLRewrite>
-      <Pattern>/img/(.*\.(jpg|png).*)</Pattern>
-      <Replace>/#1/STON/composite/watermark1</Replace>
-   </URLRewrite>
-   // Pattern : /img/image.jpg?date=20140326
-   // Replace : /image.jpg?date=20140326/STON/composite/watermark1
-
-:ref:`handling_http_requests_url_rewrite` 와 같은 표현을 사용하지만
-가상호스트마다 독립적으로 설정하기 때문에 가상호스트명을 입력하지 않는다.
-
-.. note::
-
-   바이패스되는 HTTP요청의 URL은 변경할 수 없다.
-   ``<WholeClientRequest>`` 보다 우선한다.
-
-
-
-.. _origin_modify_client:
-
-원본요청 헤더변경
-====================================
-
-원본으로 HTTP요청을 보낼 때 조건에 따라 HTTP 헤더를 변경한다. ::
-
-   # server.xml - <Server><VHostDefault><OriginOptions>
-   # vhosts.xml - <Vhosts><Vhost><OriginOptions>
+   # server.xml - <Server><VHostDefault><OriginOptions><Http>
+   # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
 
    <ModifyHeader FirstOnly="OFF">OFF</ModifyHeader>
 
@@ -597,7 +491,7 @@ ETag 헤더 인식
 이 기능은 :ref:`handling_http_requests_modify_client` 의 하위 기능이다.
 헤더변경에는 $ORGREQ 키워드를 사용한다. ::
 
-   # /svc/www.example.com/headers.txt
+   # /svc/www.example.com/http_headers.txt
 
    $URL[/*.mp4], $ORGREQ[x-media-type: video/mp4], set
    $IP[1.1.1.1], $ORGREQ[user-agent: media_probe], put
@@ -608,3 +502,88 @@ ETag 헤더 인식
 .. note::
 
    If-Modified-Since 헤더와 If-None-Match 헤더를 ``unset`` 하면 TTL이 만료된 컨텐츠는 항상 다시 다운로드 한다.
+
+
+
+
+.. _http-origin-ttlextension:
+
+비정상 TTL 연장
+====================================
+
+원본서버 종료로 인해 응답이 오지 않는 경우에는 장애판단이 명확하지만 간혹 정상적으로 응답하면서 장애상황인 경우가 발생한다.
+예를 들어 콘텐츠를 저장하는 Storage와의 연결을 잃거나, 뭔가 정상처리가 불가능하다고 판단하는 경우가 있을 수 있다.
+전자의 경우 4xx응답(주로 **404 Not Found** ), 후자는 5xx응답(주로 **500 Internal Error** )을 받게된다.
+
+하지만 이미 관련 콘텐츠가 저장되어 있다면,
+원본의 응답을 믿는 것보다 TTL을 연장시켜 서비스 전체장애가 발생하지 않도록 하는편이 효과적이다. ::
+
+    # server.xml - <Server><VHostDefault><OriginOptions><Http>
+    # vhosts.xml - <Vhosts><Vhost><OriginOptions><Http>
+
+    <TTLExtensionBy4xx>OFF</TTLExtensionBy4xx>
+    <TTLExtensionBy5xx>ON</TTLExtensionBy5xx>
+
+-  ``<TTLExtensionBy4xx>``
+
+   -  ``OFF (기본)`` 4xx 응답으로 콘텐츠를 갱신한다.
+
+   -  ``ON`` 304 not modified를 받은 것처럼 동작한다.
+
+의도된 4xx응답이 아닌지 주의해야 한다.
+
+-  ``<TTLExtensionBy5xx>``
+
+   -  ``ON (기본)`` **304 Not Modified** 를 받은 것처럼 동작한다.
+
+   -  ``OFF`` 5xx 응답으로 콘텐츠를 갱신한다.
+
+정상적인 서버라면 5xx로 응답하지 않는다.
+주로 서버의 일시적인 장애로부터 콘텐츠를 무효화하여 원본부하를 가중시키지 않기 위한 용도로 사용된다.
+
+
+
+
+.. _http-origin-health-checker:
+
+Health-Checker
+====================================
+
+`장애감지와 복구`_ 는 Caching 과정 중 발생하는 장애에만 대응한다.
+주기적으로 동작하는 Health-Checker를 설정해 놓으면 장애를 더 빨리 감지할 수 있다.
+Health-Checker는 HTTP 트랜잭션이 올바르게 완료되는지 까지 확인한다.
+
+.. note::
+
+   Health-Checker는 <Origin> 태그 하위에 설정한다.
+
+::
+
+   # vhosts.xml - <Vhosts><Vhost>
+
+   <Origin>
+       <HttpHealthChecker ResCode="0" Timeout="10" Cycle="10"
+                          Exclusion="3" Recovery="5" Log="ON">/</HealthChecker>
+       <HttpHealthChecker ResCode="200, 404" Timeout="3" Cycle="5"
+                          Exclusion="5" Recovery="20" Log="ON">/alive.html</HealthChecker>
+   </Origin>
+
+-  ``<HttpHealthChecker> (기본: /)``
+
+   Health-Checker를 구성한다. 멀티로 구성이 가능하다.
+   값으로 URI를 지정하며, XML예외 문자의 경우 CDATA로 감싸주어야 한다.
+
+   -  ``ResCode (기본: 0)`` 올바른 HTTP 응답코드 (콤마로 멀티 구성가능)
+
+   -  ``Timeout (기본: 10초)`` 소켓연결부터 HTTP 트랜잭션이 완료될 때까지 유효시간
+
+   -  ``Cycle (기본: 10초)`` 실행주기
+
+   -  ``Exclusion (기본: 3회)`` 연속 n회 실패 시 해당서버 배제
+
+   -  ``Recovery (기본: 5회)`` 연속 n회 성공 시 해당서버 재투입
+
+   -  ``Log (기본: ON)`` HTTP 트랜잭션을 :ref:`admin-log-origin` 에 기록한다.
+
+Health-Checker는 멀티로 구성할 수 있으며 클라이언트 요청과 상관없이 독립적으로 수행된다.
+`장애감지와 복구`_ 나 다른 Health-Checker와도 정보를 공유하지 않고 자신만의 기준으로 배제와 투입을 결정한다.
