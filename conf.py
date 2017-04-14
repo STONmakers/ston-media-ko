@@ -47,11 +47,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-<<<<<<< Updated upstream
-project = 'STON Edge Server'
-=======
 project = 'STON Media Server'
->>>>>>> Stashed changes
 copyright = '2017, WineSOFT Inc.'
 
 # The version info for the project you're documenting, acts as replacement for
