@@ -2,7 +2,7 @@ STON Media Server 완벽 가이드
 ==========================
 
 :저자: STON 개발팀
-:최신버전: 1.0.1, 2017년 4월 17일
+:최신버전: 1.1.0, 2017년 7월 20일
 
 
 1부. 구성과 설정
@@ -24,6 +24,9 @@ STON Media Server 완벽 가이드
 
    admin/vhost
    admin/multi_protocol
+   admin/multi_protocol_url
+   admin/multi_protocol_vod
+   admin/multi_protocol_live
    admin/http_origin
    admin/caching_policy
    admin/caching_purge

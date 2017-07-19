@@ -31,12 +31,12 @@ HTTP 원본서버에 대해 Apache 웹서버만 생각하기 쉽지만 AWS S3같
 
 원본주소(IP)는 다음 요소들에 의해 어떻게 사용될지 결정된다.
 
--  :ref:`env-vhost-activeorigin` 주소 형식(IP 또는 Domain)과 보조주소
+-  :ref:`vhost-origin-addr` 형식(IP 또는 Domain)과 보조주소
 -  `장애감지와 복구`_
 -  `Health-Checker`_
 
 서비스를 운영하다보면 원본주소가 배제/복구되는 일은 빈번하다.
-STON은 IP테이블을 기반으로 원본주소를 사용하며 `원본상태 모니터링`__ API를 통해 정보를 제공한다.
+STON은 IP테이블을 기반으로 원본주소를 사용하며 `원본상태 모니터링` API를 통해 정보를 제공한다.
 
 원본주소를 IP로 설정한 경우 매우 간단하다.
 
@@ -168,10 +168,10 @@ API를 통해 가상호스트의 원본상태를 모니터링한다. ::
 
 -  ``VirtualHost`` 가상호스트 이름
 
--  ``Address`` :ref:`env-vhost-activeorigin` .
+-  ``Address`` :ref:`vhost-origin-addr` .
    설정주소가 사용중이라면 ``Active`` , (장애발생으로) 사용하고 있지 않다면 ``Inactive`` 로 표시된다.
 
--  ``Address2`` :ref:`env-vhost-standbyorigin` .
+-  ``Address2`` :ref:`vhost-origin-addr-standby` .
    설정주소를 사용중이라면 ``Active`` , 사용하고 있지 않다면 ``Inactive`` 로 표시된다.
 
 -  ``ActiveIP`` 사용 중인 IP목록과 TTL.

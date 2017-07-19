@@ -1,4 +1,4 @@
-.. _purge-api:
+﻿.. _purge-api:
 
 8장. Caching 무효화
 ******************
@@ -319,6 +319,7 @@ Purge API가 호출될 때 컨텐츠 복구 여부를 선택한다. ::
       www.example.com/              // www.example.com 가상호스트의 기본 페이지(/)
       www.example.com/hot/*         // www.example.com 가상호스트의 /hot 디렉토리와 그 하위 페이지
       www.example.com/*             // www.example.com 가상호스트의 모든 콘텐츠
+
 
 
 .. _purge-api-post:
