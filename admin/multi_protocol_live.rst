@@ -23,10 +23,10 @@ STON 미디어 서버는 원본 LIVE 스트림으로부터 Push받거나, 게시
 
 .. note::
 
-   STON 미디어 서버는 소스를 트랜스코딩(Transcoding)하지 않는다. 
+   STON 미디어 서버는 LIVE 소스를 트랜스코딩(Transcoding)하지 않는다. 
 
 프로토콜별 URL 표현은 :ref:`multi-protocol-url` 을 참고한다. 
-서로 다른 프로토콜 변환이 발생할 때(RTMP to HLS/HLS to RTMP) 기술적인 제약사항이 있을 수 있다.
+다른 프로토콜간 변환이 발생할 때(RTMP to HLS/HLS to RTMP) 기술적인 제약사항을 고려해야 한다.
 
 .. warning::
 
@@ -48,12 +48,12 @@ STON 미디어 서버는 원본 LIVE 스트림으로부터 Push받거나, 게시
 채널은 첫번째 참가자(Participant)에 의해 생성되고, 마지막 참가자와의 연결이 종료되면 자동으로 파괴된다. 
 참가자(Participant)는 LIVE를 시청하는 클라이언트 또는 LIVE 인코더(Encoder)를 의미한다.
 
-.. figure:: img/sms_live_channel_lifycycle.png
+.. figure:: img/sms_live_channel_lifecycle.png
    :align: center
 
    채널의 생애(Life Cycle)
 
-하나의 가상호스트는 여러 채널을 동시에 서비스할 수 있다.
+하나의 가상호스트는 별도의 설정 없이도 여러 채널을 동시에 서비스할 수 있다.
 
 .. figure:: img/sms_live_channel_multi.png
    :align: center
@@ -64,7 +64,8 @@ STON 미디어 서버는 원본 LIVE 스트림으로부터 Push받거나, 게시
 
 .. note::
 
-   채널은 LIVE의 특성상 메모리만을 이용해 동작하기 때문에 메모리 크기따라 생성할 수 있는 수가 제한된다. 
+   채널은 LIVE의 특성상 메모리만을 이용해 동작한다. 
+   따라서 생성할 수 있는 채널의 수는 메모리 크기에 한정된다.
    예를 들어 사용가능한 메모리 크기가 10GB이고 채널 하나당 10MB를 소비한다면 약 1000개의 채널이 서비스 가능하다.
    메모리 한계를 초과할 경우 채널이 생성되지 않는다.
 
@@ -114,15 +115,15 @@ LIVE 소스와 통신할 프로토콜을 지정해주어야 한다. ::
 
 채널을 손쉽게 확장하기 위해서는 STON 미디어 서버를 2계층으로 구성할 것을 권장한다.
 
-.. figure:: img/sms_live_channel_scaleout.png
+.. figure:: img/sms_live_channel_scaleout1.png
    :align: center
 
    중규모 채널구성
 
-Relay 레이어는 LIVE 소스(주로 인코더)로부터 LIVE 스트림을 Push받는다.
-Edge 레이어는 클라이언트 요청에 의해(=On demand) LIVE 스트림을 Relay 레이어로부터 Pull한다.
+Relay 서버는 LIVE 소스(주로 인코더)로부터 LIVE 스트림을 Push받는다.
+Edge 서버는 클라이언트 요청에 의해(=On demand) LIVE 스트림을 Relay 서버로부터 Pull한다.
 
-더 많은 사용자를 위해서는 다음과 같이 3계층도 가능하다.
+더 많은 사용자에게 서비스하기 위해 다음과 같이 3계층 구성도 사용된다.
 
 .. figure:: img/sms_live_channel_scaleout2.png
    :align: center
@@ -207,7 +208,7 @@ LIVE 스트림을 인코더로부터 직접 Push받을 수 있다.
 
 같은 URL로 복수의 Live 스트림이 Push되는 경우 가장 먼저 연결된 스트림이 Active 소스가 되며 나머지는 Standby 소스가 된다. 
 
-.. figure:: img/sms_live_rtmp_push_multi.png
+.. figure:: img/sms_live_rtmp_push_multi_line1.png
    :align: center
 
    RTMP Push - 멀티소스 구성
@@ -219,6 +220,12 @@ LIVE 스트림을 인코더로부터 직접 Push받을 수 있다.
 
 
 Active 소스와 연결이 종료되면 연결된 순서대로 Standby 소스가 Active 소스로 승격된다.
+
+.. figure:: img/sms_live_rtmp_push_multi_line2.png
+   :align: center
+
+   RTMP Push - Active 장애발생 처리
+
 이 때 각 소스간 서로 다른 Timestamp를 사용하여도 최초 Active 소스의 Timestamp가 승계되어 매끄러운(Seamless) 재생환경을 구성한다.
 
 
@@ -232,7 +239,7 @@ Active 소스와 연결이 종료되면 연결된 순서대로 Standby 소스가
 LIVE 스트림 Push를 통해 ABR(Adaptive bitrate) 스트리밍(streaming)을 구성할 수 있다.
 이를 위해서는 개별로 Push되는 스트림을 하나의 ABR 스트림으로 묶어 주어야 한다.
 
-기본적으로 STON 미디어 서버는 같은 소스를 다양한 Bitrate로 Push 해도 이를 알지 못하며, 각기 다른 LIVE 스트림으로 인식한다.
+기본적으로 STON 미디어 서버는 같은 소스를 다양한 Bitrate로 Push 해도 이를 알지 못하며, 다음처럼 각기 다른 LIVE 스트림으로 인식한다.
 
 .. figure:: img/sms_live_rtmp_push_abr1.png
    :align: center
@@ -256,7 +263,7 @@ ABR 스트리밍은 사전에 패턴을 등록하여 동작한다. ::
    하위의 멀티 ``<Pattern>`` 을 하나의 ABR 스트림으로 구성한다.
    구성된 ABR 스트림은 ``Name`` 을 URL로 접근이 가능하다.
 
-예를 들어 위와 같은 구성에 아래와 같이 3개의 스트림이 Push되었다고 가정해 보자. ::
+예를 들어 위와 같은 구성하에 다음처럼 각기 다른 Bitrate의 스트림들이 Push되었다고 가정해 보자. ::
 
    /myLiveStream_720
    /myLiveStream_480
@@ -265,6 +272,11 @@ ABR 스트리밍은 사전에 패턴을 등록하여 동작한다. ::
 "/myLiveStream_" 은 패턴 "*_"와 일치한다. 위의 세개의 스트림은 아래의 ABR 스트림으로 구성된다. ::
 
    /myLiveStream_abr         -> /myLiveStream_720 + /myLiveStream_480 + /myLiveStream_360
+
+그림으로 표현하면 아래와 같다.
+
+.. figure:: img/sms_live_rtmp_push_abr2.png
+   :align: center
 
 조금 더 복잡한 예를 들어보자.
 아래와 같이 동시에 여러 Live 스트림이 입력되었다고 가정해 보자. 
@@ -275,25 +287,28 @@ ABR 스트리밍은 사전에 패턴을 등록하여 동작한다. ::
    /myLiveStream_360          (*_360)
    /AliceLive_720             (*_720)
    /AliceLive_360             (*_360)
-   /JamesLive_720_clips       X
-   /JamesLive_360_clips       X
-   /JohnLive_1080             X
+   /JamesLive_720_clips          X
+   /JamesLive_360_clips          X
+   /JohnLive_1080                X
    /JohnLive_720              (*_720)
-   /cctv                      X
+   /cctv                         X
 
 
 이때 구성되는 ABR 스트림은 다음과 같다. ::
 
-   /myLiveStream_abr           -> /myLiveStream_720 + /myLiveStream_480 + /myLiveStream_360
-   /AliceLive_abr              -> /AliceLive_720 + /AliceLive_360
-   /JohnLive_abr               -> /JohnLive_720
+   /myLiveStream_abr          -> /myLiveStream_720 + /myLiveStream_480 + /myLiveStream_360
+   /AliceLive_abr             -> /AliceLive_720 + /AliceLive_360
+   /JohnLive_abr              -> /JohnLive_720
    
 그림으로 표현하면 아래와 같다.
+
+.. figure:: img/sms_live_rtmp_push_abr3.png
+   :align: center
 
     .. figure:: img/sms_live_channel_multi.png
        :align: center
 
-이와 같은 방식은 각 스트림 이름을 정확히 알지 못해도 패턴만으로 구성을 자동화할 수 있다는 장점이 있다.
+이와 같은 방식은 각 스트림 이름을 정확히 알지 못해도 패턴만으로 ABR 스트림 구성을 자동화할 수 있다는 장점이 있다.
 
 
 
@@ -331,7 +346,7 @@ ABR 스트리밍은 사전에 패턴을 등록하여 동작한다. ::
 
 Active 소스와 연결이 성립되면 Standby 소스를 확보하기 위해 모든 원본서버 주소로 LIVE 스트림을 요청한다.
 
-.. figure:: img/sms_live_rtmp_pull_multi.png
+.. figure:: img/sms_live_rtmp_pull_multi_line1.png
    :align: center
 
    RTMP Pull - 멀티소스 구성
@@ -341,8 +356,13 @@ Active 소스와 연결이 성립되면 Standby 소스를 확보하기 위해 �
 
    소스는 최대 3개 (1 Active, 2 Standby)까지 구성이 가능하다.
 
-
 Active 소스와 연결이 종료되면 확보된 순서대로 Standby 소스가 Active 소스로 승격된다.
+
+.. figure:: img/sms_live_rtmp_pull_multi_line2.png
+   :align: center
+
+   RTMP Pull - Active 장애발생 처리
+
 이 때 각 소스간 서로 다른 Timestamp를 사용하여도 최초 Active 소스의 Timestamp가 승계되어 매끄러운(Seamless) 재생환경을 구성한다.
 
 
@@ -352,7 +372,7 @@ Active 소스와 연결이 종료되면 확보된 순서대로 Standby 소스가
 RTMP to RTMP 전송
 ------------------------------------
 
-LIVE 소스로부터 수신 받은 RTMP 스트림을 그대로 RTMP 클라이언트에게 전송한다. 
+LIVE 소스로부터 수신 받은 RTMP 스트림을 가공없이 RTMP 클라이언트에게 전송한다. 
 대부분 :ref:`multi-protocol-vod-adobe-rtmp-session` 설정을 그대로 사용하지만, ``<BufferSize>`` 의 의미가 다르다. ::
 
    # server.xml - <Server><VHostDefault><Options><Rtmp>
@@ -363,14 +383,14 @@ LIVE 소스로부터 수신 받은 RTMP 스트림을 그대로 RTMP 클라이언
 -  ``<BufferSize> (기본: 3초)``
    클라이언트가 PLAY를 요청했을 때 "현재시점"에서 설정된 시간(초) 이전부터 전송한다.
 
-      .. figure:: img/sms_live_channel_multi.png
+      .. figure:: img/sms_live_rtmp_buffersize.png
          :align: center
       
    값이 0이라면 PLAY 요청 시 채널의 "현재시점"을 전송한다. 
 
 LIVE 서비스의 특성상 방송 시점과 클라이언트 시청 시점의 차이가 짧을수록 좋다.
 
-.. figure:: img/sms_live_channel_multi.png
+.. figure:: img/sms_live_rtmp_delay_chart.png
    :align: center
 
    BufferSize , 시점, 네트워크 안정성, 원활한 재생의 관계
@@ -407,14 +427,14 @@ HLS 전송을 위해서는 RTMP 스트림을 Packetizing해야 한다.
    - ``ChunkCount (기본 3)`` 인덱스파일(m3u8)에서 제공할 Chunk개수를 지정한다.
 
 RTMP를 HLS로 변환할 때는 Streaming되는 Audio/Video를 Chunk(MPEG2-TS)파일로 만들어야 한다. 
-LIVE가 진행되면서 (기본 ``<Duration>`` 설정에서) 인덱스파일은 아래와 같이 변한다.
+(기본 ``<Duration>`` 설정인 경우) RTMP를 이용한 LIVE가 진행되면 신규 유저에게 제공되는 HLS는 아래와 같다.
 
-.. figure:: img/sms_live_workflow_rtmp_hls_duration10.png
+.. figure:: img/sms_live_rtmp_to_hls1.png
    :align: center
    
    RTMP시점보다 30초 전 시점부터 시청한다.
 
-``<Duration>`` 을 아래와 같이 줄이면 시청 시점을 RTMP와 최대한 맞출 수 있다. ::
+RTMP의 "현재시점" 과 최대한 맞추기 위해서는 ``<Duration>`` 을 줄일 필요가 있다. ::
 
    # server.xml - <Server><VHostDefault><Options><Hls>
    # vhosts.xml - <Vhosts><Vhost><Options><Hls>
@@ -423,7 +443,7 @@ LIVE가 진행되면서 (기본 ``<Duration>`` 설정에서) 인덱스파일은 
       <Duration ChunkCount="3">2</Duration>
    </Packetizing>
 
-.. figure:: img/sms_live_workflow_rtmp_hls_duration2.png
+.. figure:: img/sms_live_rtmp_to_hls2.png
    :align: center
 
    RTMP시점보다 6초 전 시점부터 시청한다.
@@ -475,6 +495,36 @@ Apple HLS
    :align: center
 
    Pull하면 채널이 생성된다.
+
+
+
+
+.. _multi-protocol-live-apple-hls-pull-multisource:
+
+[Pull] 다중화
+------------------------------------
+
+Active 소스와 연결이 성립되면 Standby 소스를 확보하기 위해 모든 원본서버 주소로 HLS를 요청한다.
+
+.. figure:: img/sms_live_hls_pull_multi_line1.png
+   :align: center
+
+   HLS Pull - 멀티소스 구성
+
+
+.. note::
+
+   소스는 최대 3개 (1 Active, 2 Standby)까지 구성이 가능하다.
+
+Active 소스와 연결이 종료되면 확보된 순서대로 Standby 소스가 Active 소스로 승격된다.
+
+.. figure:: img/sms_live_hls_pull_multi_line2.png
+   :align: center
+
+   HLS Pull - Active 장애발생 처리
+
+이 때 각 소스간 서로 다른 Timestamp를 사용하여도 최초 Active 소스의 Timestamp가 승계되어 매끄러운(Seamless) 재생환경을 구성한다.
+
 
 
 
